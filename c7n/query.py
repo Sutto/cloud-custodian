@@ -92,20 +92,20 @@ class ResourceQuery(object):
                 return []
             # Handle the param contextual scoping...
             if existing_param:
-                data = self.invoke_client_enum(client, enum_op, params, path)
+                data = self._invoke_client_enum(client, enum_op, params, path)
             elif parent_batchable:
                 params[param_key] = parent_ids
-                data = self.invoke_client_enum(client, enum_op, params, path)
+                data = self._invoke_client_enum(client, enum_op, params, path)
             else:
-                # We need to invoke the op for each item here, which kind of sucks...
+                # Since they're a single call-per-id, we need to invoke it for each id here.
                 results = []
                 for parent_id in parent_ids:
                     merged_params = dict(params, **{param_key: parent_id})
-                    subset = self.invoke_client_enum(client, enum_op, merged_params, path)
+                    subset = self._invoke_client_enum(client, enum_op, merged_params, path)
                     results.extend(subset)
                 data = results
         else:
-            data = self.invoke_client_enum(client, enum_op, params, path)
+            data = self._invoke_client_enum(client, enum_op, params, path)
 
         if data is None:
             data = []
