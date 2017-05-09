@@ -17,15 +17,16 @@ import logging
 
 from c7n.actions import Action, BaseAction
 from c7n.exceptions import PolicyValidationError
-from c7n.filters import ValueFilter, Filter
+from c7n.filters import ValueFilter, Filter, FilterRegistery
 from c7n.manager import resources
 from c7n.tags import universal_augment
 from c7n.query import DescribeSource, QueryResourceManager, TypeInfo
 from c7n.utils import local_session, type_schema
-
 from .aws import shape_validate, Arn
+import re
 
 log = logging.getLogger('c7n.resources.cloudtrail')
+filters = FilterRegistry('cloudtrail.filters')
 
 
 @resources.register('cloudtrail')
@@ -52,8 +53,7 @@ class DescribeTrail(DescribeSource):
     def augment(self, resources):
         return universal_augment(self.manager, resources)
 
-
-@CloudTrail.filter_registry.register('is-shadow')
+@filters.register('is-shadow')
 class IsShadow(Filter):
     """Identify shadow trails (secondary copies), shadow trails
     can't be modified directly, the origin trail needs to be modified.
@@ -81,7 +81,7 @@ class IsShadow(Filter):
         return False
 
 
-@CloudTrail.filter_registry.register('status')
+@filters.register('status')
 class Status(ValueFilter):
     """Filter a cloudtrail by its status.
 
@@ -221,6 +221,7 @@ class SetLogging(Action):
                 client.stop_logging(Name=r['Name'])
 
 
+
 @CloudTrail.action_registry.register('delete')
 class DeleteTrail(BaseAction):
     """ Delete a cloud trail
@@ -254,3 +255,100 @@ class DeleteTrail(BaseAction):
                 client.delete_trail(Name=r['Name'])
             except client.exceptions.TrailNotFoundException:
                 continue
+
+@filters.register('monitored-metric')
+class MonitoredCloudtrailMetric(ValueFilter):
+    """Finds cloudtrails with logging and a metric filter. Is a subclass of ValueFilter,
+    filtering the metric filter objects. Optionally, verifies an alarm exists (true by default),
+    and for said alarm, there is atleast one SNS subscription (again, true by default).
+
+    :example:
+
+        .. code-block: yaml
+
+            policies:
+              - name: cloudtrail-trail-with-login-attempts
+                resource: cloudtrail
+                region: us-east-1
+                filters:
+                  - type: monitored-metric
+                    alarm: true
+                    topic-subscription: false
+                    filter: '$.eventName = DeleteTrail'
+    """
+
+    schema = type_schema('monitored-metric', rinherit=ValueFilter.schema, **{
+        'topic-subscription': {'type': 'boolean'},
+        'alarm': {'type': 'boolean'}
+    })
+
+    permissions = ('logs:DescribeMetricFilters', 'cloudwatch:DescribeAlarms',
+        'sns:ListSubscriptionsByTopic')
+
+    def _filterTopicArnsToSubscribed(self, session, topicArns):
+        sns = session.client('sns')
+
+        def arnHasSubscriptions(arn):
+            subscriptions = sns.list_subscriptions_by_topic(TopicArn=arn)['Subscriptions']
+            return any(subscriptions)
+        return filter(arnHasSubscriptions, topicArns)
+
+    def _allAlarms(self):
+        return self.manager.get_resource_manager('alarm').resources()
+
+    def _metricFiltersForLogGroup(self, session, groupName):
+        logs = session.client('logs')
+        paginator = logs.get_paginator('describe_metric_filters')
+        results = paginator.paginate(logGroupName=groupName).build_full_result()
+        return results['metricFilters']
+
+    def _alarmInMetrics(self, alarm, metrics):
+        pair = (alarm['Namespace'], alarm['MetricName'])
+        return pair in metrics
+
+    def checkResourceMetricFilters(self, resource):
+        logGroupArn = resource.get('CloudWatchLogsLogGroupArn')
+        if not logGroupArn:
+            return False
+
+        session = local_session(self.manager.session_factory)
+
+        groupName = re.search(':log-group:([^:]+)', logGroupArn).group(1)
+        filters = self._metricFiltersForLogGroup(session, groupName)
+        matchingFilters = filter(lambda mf: self.match(mf), filters)
+        if not matchingFilters:
+            return False
+        resource['c7n:matching-metric-filters'] = matchingFilters
+
+        # We need to filter the list of transformations to those that emit a value, and then put
+        # it into a format we can easily cross compare on.
+        allTransformations = map(lambda filter: filter['metricTransformations'], matchingFilters)
+        transformations = sum(allTransformations, [])
+        emittedMetrics = map(lambda t: (t['metricNamespace'], t['metricName']), transformations)
+        if not emittedMetrics:
+            return False
+        resource['c7n:emitted-metric-filters'] = emittedMetrics
+
+        consideredSet = emittedMetrics
+
+        if self.data.get('alarm', True):
+            metricAlarms = self._allAlarms()
+
+            def alarmFilter(alarm):
+                return self._alarmInMetrics(alarm, emittedMetrics)
+            filteredAlarms = filter(alarmFilter, metricAlarms)
+            if not filteredAlarms:
+                return False
+            consideredSet = filteredAlarms
+            resource['c7n:metric-filter-alarms'] = filteredAlarms
+            if self.data.get('topic-subscription'):
+                alarmSNSTopics = sum(map(lambda alarm: alarm['AlarmActions'], filteredAlarms), [])
+                if not alarmSNSTopics:
+                    return False
+                consideredSet = self._filterTopicArnsToSubscribed(session, alarmSNSTopics)
+                resource['c7n:subscribed-metric-filter-alarm-topics'] = consideredSet
+
+        return any(consideredSet)
+
+    def process(self, resources, event=None):
+        return [resource for resource in resources if self.checkResourceMetricFilters(resource)]
