@@ -85,22 +85,21 @@ class RelatedResourceFilter(ValueFilter):
                     self.RelatedResource.rsplit('.', 1)[-1],
                     rid)
                 continue
-            found.append(robj)
-
+            items.append(robj)
 
         filtered = []
         # Now, we filter accordingly...
         if self.data.get('filters'):
-            filtered = self.get_resource_manager().filter_resources(found)
+            filtered = self.get_resource_manager().filter_resources(items)
         else:
-            filtered = filter(self.match, found)
+            filtered = filter(self.match, items)
 
         if self.AnnotationKey is not None:
             resource['c7n.%s' % self.AnnotationKey] = filtered
 
         if op == 'or' and filtered:
             return True
-        elif op == 'and' and len(filtered) == len(found):
+        elif op == 'and' and len(filtered) == len(items):
             return True
         return False
 
