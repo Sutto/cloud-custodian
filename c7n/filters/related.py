@@ -61,13 +61,17 @@ class RelatedResourceFilter(ValueFilter):
         mod_path, class_name = self.RelatedResource.rsplit('.', 1)
         module = importlib.import_module(mod_path)
         manager_class = getattr(module, class_name)
-        return manager_class(self.manager.ctx, {})
+
+        data = {}
+        if self.data.get('filters'):
+            data['filters'] = self.data['filters']
+        return manager_class(self.manager.ctx, data)
 
     def process_resource(self, resource, related):
         related_ids = self.get_related_ids([resource])
         model = self.manager.get_model()
         op = self.data.get('operator', 'or')
-        found = []
+        items = []
         if self.data.get('match-resource') is True:
             self.data['value'] = self.get_resource_value(
                 self.data['key'], resource)
@@ -81,15 +85,22 @@ class RelatedResourceFilter(ValueFilter):
                     self.RelatedResource.rsplit('.', 1)[-1],
                     rid)
                 continue
-            if self.match(robj):
-                found.append(rid)
+            found.append(robj)
+
+
+        filtered = []
+        # Now, we filter accordingly...
+        if self.data.get('filters'):
+            filtered = self.get_resource_manager().filter_resources(found)
+        else:
+            filtered = filter(self.match, found)
 
         if self.AnnotationKey is not None:
-            resource['c7n.%s' % self.AnnotationKey] = found
+            resource['c7n.%s' % self.AnnotationKey] = filtered
 
-        if op == 'or' and found:
+        if op == 'or' and filtered:
             return True
-        elif op == 'and' and len(found) == len(related_ids):
+        elif op == 'and' and len(filtered) == len(found):
             return True
         return False
 
