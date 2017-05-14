@@ -663,16 +663,14 @@ class EnableTrail(BaseAction):
                 update_args['Name'] = trail_name
                 client.update_trail(**update_args)
 
+
 @filters.register('alarmed-cloudtrail-patterns')
 class MonitoredCloudtrailMetric(Filter):
     """Finds cloudtrails with logging and a metric filter. Is a subclass of ValueFilter,
     filtering the metric filter objects. Optionally, verifies an alarm exists (true by default),
     and for said alarm, there is atleast one SNS subscription (again, true by default).
-
     :example:
-
         .. code-block: yaml
-
             policies:
               - name: cloudtrail-trail-with-login-attempts
                 resource: cloudtrail
