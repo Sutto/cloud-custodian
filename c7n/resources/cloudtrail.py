@@ -77,12 +77,17 @@ class MonitoredCloudtrailMetric(ValueFilter):
             return any(subscriptions)
         return filter(arnHasSubscriptions, topicArns)
 
+<<<<<<< HEAD
     def _allAlarms(self, session):
         # TODO: We should cache this better.
         cloudwatch = session.client('cloudwatch')
         paginator = cloudwatch.get_paginator('describe_alarms')
         results = paginator.paginate().build_full_result()
         return results['MetricAlarms']
+=======
+    def _allAlarms(self):
+        return self.manager.get_resource_manager('alarm').resources()
+>>>>>>> ours/account-cloudtrail-metric-filter
 
     def _metricFiltersForLogGroup(self, session, groupName):
         logs = session.client('logs')
@@ -120,7 +125,11 @@ class MonitoredCloudtrailMetric(ValueFilter):
         consideredSet = emittedMetrics
 
         if self.data.get('alarm', True):
+<<<<<<< HEAD
             metricAlarms = self._allAlarms(session)
+=======
+            metricAlarms = self._allAlarms()
+>>>>>>> ours/account-cloudtrail-metric-filter
 
             def alarmFilter(alarm):
                 return self._alarmInMetrics(alarm, emittedMetrics)
