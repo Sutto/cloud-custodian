@@ -390,7 +390,12 @@ class DirectoryOutput(object):
 
         self.root_dir = output_path
         if self.root_dir and not os.path.exists(self.root_dir):
-            os.makedirs(self.root_dir)
+            try:
+                os.makedirs(self.root_dir)
+            except OSError as e:
+                # This is a race condition possibly, so ignore it.
+                if e.errno != 17:
+                    raise
 
     def __enter__(self):
         return
@@ -416,7 +421,6 @@ class DirectoryOutput(object):
         if '{' not in output_url:
             return os.path.join(output_url, self.ctx.policy.name)
         return output_url.format(**self.get_output_vars())
-
     def get_output_vars(self):
         data = {
             'account_id': self.ctx.options.account_id,
