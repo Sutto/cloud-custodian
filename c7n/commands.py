@@ -13,7 +13,7 @@
 # limitations under the License.
 from __future__ import print_function
 
-from error_tracking import c7n
+from c7n import error_tracking
 
 from collections import Counter, defaultdict
 from datetime import timedelta, datetime
