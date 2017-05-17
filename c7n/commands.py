@@ -13,6 +13,7 @@
 # limitations under the License.
 from __future__ import absolute_import, division, print_function, unicode_literals
 
+from botocore.exceptions import ClientError, EndpointConnectionError
 from collections import Counter, defaultdict
 from datetime import timedelta, datetime
 from functools import wraps
@@ -33,10 +34,11 @@ from c7n.policy import Policy, PolicyCollection, load as policy_load
 from c7n.schema import ElementSchema, StructureParser, generate
 from c7n.utils import dumps, load_file, local_session, SafeLoader, yaml_dump
 from c7n.config import Bag, Config
+from c7n.credentials import UnableToAssumeRole
 from c7n import provider
 from c7n.resources import load_resources
 
-
+from c7n import error_tracking
 log = logging.getLogger('custodian.commands')
 
 
@@ -264,6 +266,8 @@ def validate(options):
         sys.exit(1)
 
 
+AWS_ERROR_BLACKLIST = ['OptInRequired', 'SubscriptionRequiredException', 'EndpointConnectionError']
+
 @policy_command
 def run(options, policies):
     exit_code = 0
@@ -280,14 +284,42 @@ def run(options, policies):
     for policy in policies:
         try:
             policy()
+        except UnableToAssumeRole:
+            log.warning("Unable to assume the especified role.")
+        except EndpointConnectionError:
+            log.warning("Unable to find the correct endpoint - this usually means a new server.")
+        except ClientError as e:
+            # AWS Client error, we can handle + resume this, in theory - but we should log
+            # it as a warning to the error tracker with some context.
+            error_body = e.response['Error']
+            error_code = error_body.get('Code', 'Unknown')
+            if error_code in ['AccessDenied', 'AccessDeniedException', 'UnauthorizedOperation', 'AuthorizationError']:
+                log.warning("Reported access denied exception in %s, continuing: %s" % (policy.name, repr({
+                    'error_details': error_body,
+                    'policy': repr(policy),
+                    'policy_data': policy.data,
+                    'policy_options': policy.options,
+                    'expected_permissions': list(policy.get_permissions()),
+                })))
+            elif error_code in AWS_ERROR_BLACKLIST:
+                # DO nothing... We don't report these.
+                log.warning("Got error on blacklist: %s" % (error_code,))
+            else:
+                # Handle it here, but we skip.
+                error_tracking.report_exception()
+                log.warning("Reported generic client exception in %s as %s, continuing." % (policy.name, error_code))
         except Exception:
             exit_code = 2
+            error_tracking.report_exception()
             if options.debug:
                 raise
             log.exception(
-                "Error while executing policy %s, continuing" % (
+                "Error in policy: %s" % (
                     policy.name))
-    if exit_code != 0:
+    if exit_code == 0:
+        log.info("Successfully ran %d policies." % len(policies))
+    else:
+        log.info("Ran %d policies, encountered an unhandled exception." % len(policies))
         sys.exit(exit_code)
 
 
