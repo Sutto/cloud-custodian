@@ -13,6 +13,8 @@
 # limitations under the License.
 from __future__ import print_function
 
+from error_tracking import c7n
+
 from collections import Counter, defaultdict
 from datetime import timedelta, datetime
 from functools import wraps
@@ -195,6 +197,7 @@ def run(options, policies):
             policy()
         except Exception:
             exit_code = 2
+            error_tracking.report_exception()
             if options.debug:
                 raise
             log.exception(
