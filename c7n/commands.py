@@ -15,6 +15,7 @@ from __future__ import print_function
 
 from c7n import error_tracking
 
+from botocore.exceptions import ClientError
 from collections import Counter, defaultdict
 from datetime import timedelta, datetime
 from functools import wraps
@@ -195,6 +196,21 @@ def run(options, policies):
     for policy in policies:
         try:
             policy()
+        except ClientError as e:
+            # AWS Client error, we can handle + resume this, in theory - but we should log
+            # it as a warning to the error tracker with some context.
+            error_body = e.response['Error']
+            if error_body.get('Code', 'Unknown') == 'AccessDeniedException':
+                error_tracking.report("Access denied in policy", 'warning', {}, extra_data={
+                    'error_details': error_body,
+                    'policy': repr(policy),
+                    'policy_data': policy.data,
+                    'policy_options': policy.options,
+                    'expected_permissions': list(policy.get_permissions()),
+                })
+                log.warning("Reported exception in %s, continuing." % (policy.name,))
+            else:
+                raise
         except Exception:
             exit_code = 2
             error_tracking.report_exception()

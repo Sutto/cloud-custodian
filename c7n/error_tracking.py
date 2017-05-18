@@ -12,7 +12,8 @@ class Backend(object):
     pass
 
   def report(self, *args, **kwargs):
-    pass
+    print(args, kwargs)
+    # pass
 
 class RollbarBackend(object):
   
