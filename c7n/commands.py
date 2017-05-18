@@ -219,7 +219,10 @@ def run(options, policies):
             log.exception(
                 "Error while executing policy %s, continuing" % (
                     policy.name))
-    if exit_code != 0:
+    if exit_code == 0:
+        log.info("Successfully ran %d policies." % len(policies))
+    else:
+        log.info("Ran %d policies, encountered an unhandled exception." % len(policies))
         sys.exit(exit_code)
 
 
