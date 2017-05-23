@@ -57,13 +57,13 @@ class RelatedResourceFilter(ValueFilter):
         return {r[model.id]: r for r in related
                 if r[model.id] in related_ids}
 
-    def get_resource_manager(self):
+    def get_resource_manager(self, with_filter=False):
         mod_path, class_name = self.RelatedResource.rsplit('.', 1)
         module = importlib.import_module(mod_path)
         manager_class = getattr(module, class_name)
 
         data = {}
-        if self.data.get('filters'):
+        if self.data.get('filters') and with_filter:
             data['filters'] = self.data['filters']
         return manager_class(self.manager.ctx, data)
 
@@ -90,7 +90,7 @@ class RelatedResourceFilter(ValueFilter):
         filtered = []
         # Now, we filter accordingly...
 
-        related_manager = self.get_resource_manager()
+        related_manager = self.get_resource_manager(True)
         related_model = related_manager.get_model()
         if self.data.get('filters'):
             filtered = related_manager.filter_resources(items)
@@ -98,8 +98,8 @@ class RelatedResourceFilter(ValueFilter):
             filtered = filter(self.match, items)
 
         if self.AnnotationKey is not None:
-            print(filtered, related_model.id)
             resource['c7n.%s' % self.AnnotationKey] = map(lambda r: r[related_model.id], filtered)
+            resource['c7n.full.%s' % self.AnnotationKey] = filtered
 
         if op == 'or' and filtered:
             return True
