@@ -25,7 +25,7 @@ class RollbarBackend(object):
 
 if os.getenv('ROLLBAR_APP_TOKEN'):
   import rollbar
-  rollbar.init(os.getenv('ROLLBAR_APP_TOKEN'), environment)
+  rollbar.init(os.getenv('ROLLBAR_APP_TOKEN'), environment, allow_logging_basic_config=False)
   backend = RollbarBackend()
 else:
   backend = Backend()
