@@ -28,5 +28,6 @@ setup(
         "ipaddress",
         "argcomplete",
         "tabulate",
+        "rollbar"
     ],
 )
