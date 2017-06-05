@@ -394,6 +394,7 @@ class AllowAllIamPolicies(Filter):
                     'Action' in s and
                     isinstance(s['Action'], basestring) and
                     s['Action'] == "*" and
+                    'Resource' in s and
                     isinstance(s['Resource'], basestring) and
                     s['Resource'] == "*" and
                     s['Effect'] == "Allow"):
