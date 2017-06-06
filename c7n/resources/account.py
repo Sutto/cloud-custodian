@@ -704,8 +704,14 @@ class MonitoredCloudtrailMetric(Filter):
     def fetch_metric_filters_for_log_group(self, session, groupName):
         logs = session.client('logs')
         paginator = logs.get_paginator('describe_metric_filters')
-        results = paginator.paginate(logGroupName=groupName).build_full_result()
-        return results['metricFilters']
+        try:
+            results = paginator.paginate(logGroupName=groupName).build_full_result()
+            return results['metricFilters']
+        except ClientError as e:
+            if e.response['Error']['Code'] == 'ResourceNotFoundException':
+                return []
+            else:
+                raise
 
     def alarm_contains_metrics(self, alarm, metrics):
         pair = (alarm['Namespace'], alarm['MetricName'])
