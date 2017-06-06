@@ -1,9 +1,7 @@
----
 policies:
-  - name: xyz
-    resource: account
+  - name: abc
+    resource: kms-key
     filters:
-      - type: alarmed-cloudtrail-patterns
-        patterns:
-          - 'PutConfigurationRecorder'
-          - 'StopConfigurationRecorder'
+      - type: key-rotation-status
+        key: KeyRotationEnabled
+        value: false
