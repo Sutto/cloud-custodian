@@ -1,0 +1,9 @@
+---
+policies:
+  - name: xyz
+    resource: account
+    filters:
+      - type: alarmed-cloudtrail-patterns
+        patterns:
+          - 'PutConfigurationRecorder'
+          - 'StopConfigurationRecorder'
