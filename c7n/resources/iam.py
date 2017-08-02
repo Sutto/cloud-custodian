@@ -562,7 +562,7 @@ class CredentialReport(Filter):
             return report
         data = self.fetch_credential_report()
         report = {}
-        reader = csv.reader(io.StringIO(data))
+        reader = csv.reader(six.StringIO(data))
         headers = next(reader)
         for line in reader:
             info = dict(zip(headers, line))
