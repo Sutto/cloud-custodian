@@ -210,9 +210,8 @@ def validate(options):
 #        permissions.update(p.get_permissions())
 #    pprint.pprint(sorted(list(permissions)))
 
-
+# General error blacklist.
 AWS_ERROR_BLACKLIST = ['OptInRequired', 'SubscriptionRequiredException']
-
 
 @policy_command
 def run(options, policies):
@@ -225,7 +224,7 @@ def run(options, policies):
             # it as a warning to the error tracker with some context.
             error_body = e.response['Error']
             error_code = error_body.get('Code', 'Unknown')
-            if error_code == 'AccessDeniedException':
+            if error_code in ['AccessDeniedException', 'UnauthorizedOperation']:
                 error_tracking.report("Access denied in policy", 'warning', {}, extra_data={
                     'error_details': error_body,
                     'policy': repr(policy),
