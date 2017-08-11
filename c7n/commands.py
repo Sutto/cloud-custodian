@@ -235,7 +235,7 @@ def run(options, policies):
             else:
                 # Handle it here, but we skip.
                 error_tracking.report_exception()
-                log.warning("Reported generic client exception in %s, continuing." % (policy.name,))
+                log.warning("Reported generic client exception in %s as %s, continuing." % (policy.name, error_code))
         except Exception:
             exit_code = 2
             error_tracking.report_exception()
