@@ -35,6 +35,7 @@ from c7n.reports import report as do_report
 from c7n.utils import Bag, dumps, load_file
 from c7n import provider
 from c7n.resources import load_resources
+from c7n.credentials import UnableToAssumeRole
 from c7n import schema
 
 
@@ -220,20 +221,21 @@ def run(options, policies):
     for policy in policies:
         try:
             policy()
+        except UnableToAssumeRole:
+            log.warning("Unable to assume the especified role.")
         except ClientError as e:
             # AWS Client error, we can handle + resume this, in theory - but we should log
             # it as a warning to the error tracker with some context.
             error_body = e.response['Error']
             error_code = error_body.get('Code', 'Unknown')
-            if error_code in ['AccessDeniedException', 'UnauthorizedOperation']:
-                error_tracking.report("Access denied in policy", 'warning', {}, extra_data={
+            if error_code in ['AccessDenied', 'AccessDeniedException', 'UnauthorizedOperation']:
+                log.warning("Reported access denied exception in %s, continuing: %s" % (policy.name, repr({
                     'error_details': error_body,
                     'policy': repr(policy),
                     'policy_data': policy.data,
                     'policy_options': policy.options,
                     'expected_permissions': list(policy.get_permissions()),
-                })
-                log.warning("Reported access denied exception in %s, continuing." % (policy.name,))
+                })))
             elif error_code in AWS_ERROR_BLACKLIST:
                 # DO nothing... We don't report these.
                 log.warning("Got error on blacklist: %s" % (error_code,))
