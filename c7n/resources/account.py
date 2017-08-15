@@ -1037,6 +1037,8 @@ class MonitoredCloudtrailMetric(Filter):
 
     def text_matches_patterns(self, metric_filter):
         patterns = self.data['patterns']
+        if 'filterPattern' not in metric_filter:
+            return False
         text = metric_filter['filterPattern']
         return all(map(lambda pattern: bool(re.search(pattern, text, flags=re.IGNORECASE)), patterns))
 
