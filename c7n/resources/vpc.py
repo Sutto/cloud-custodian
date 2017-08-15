@@ -1,4 +1,4 @@
-# Copyright 2016 Capital One Services, LLC
+# Copyright 2016-2017 Capital One Services, LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import json
 import itertools
@@ -23,6 +24,7 @@ from c7n.actions import BaseAction, ModifyVpcSecurityGroupsAction
 from c7n.filters import (
     DefaultVpcBase, Filter, FilterValidationError, ValueFilter)
 import c7n.filters.vpc as net_filters
+from c7n.filters.related import RelatedResourceFilter
 from c7n.filters.revisions import Diff
 from c7n.query import QueryResourceManager
 from c7n.manager import resources
@@ -153,6 +155,40 @@ class FlowLogFilter(Filter):
                         results.append(r)
 
         return results
+
+
+@Vpc.filter_registry.register('security-group')
+class SecurityGroupFilter(RelatedResourceFilter):
+    """Filter VPCs based on Security Group attributes
+
+    :example:
+
+        .. code-block: yaml
+
+            policies:
+              - name: gray-vpcs
+                resource: vpc
+                filters:
+                  - type: security-group
+                    key: tag:Color
+                    value: Gray
+    """
+    schema = type_schema(
+        'security-group', rinherit=ValueFilter.schema,
+        **{'match-resource':{'type': 'boolean'},
+           'operator': {'enum': ['and', 'or']}})
+    RelatedResource = "c7n.resources.vpc.SecurityGroup"
+    RelatedIdsExpression = '[SecurityGroups][].GroupId'
+    AnnotationKey = "matched-vpcs"
+
+    def get_related_ids(self, resources):
+        vpc_ids = [vpc['VpcId'] for vpc in resources]
+        vpc_group_ids = {
+            g['GroupId'] for g in
+            self.manager.get_resource_manager('security-group').resources()
+            if g.get('VpcId', '') in vpc_ids
+        }
+        return vpc_group_ids
 
 
 @resources.register('subnet')
@@ -288,7 +324,7 @@ class SecurityGroupDiff(object):
             ev.sort()
             for e in ev:
                 buf += "%s-" % e
-        return abs(zlib.crc32(buf))
+        return abs(zlib.crc32(buf.encode('ascii')))
 
 
 @SecurityGroup.action_registry.register('patch')
@@ -654,10 +690,10 @@ class SGPermission(Filter):
         OnlyPorts: [22, 443, 80]
 
       - type: egress
-        IpRanges:
-          - value_type: cidr
-          - op: in
-          - value: x.y.z
+        Cidr:
+          value_type: cidr
+          op: in
+          value: x.y.z
 
     """
 
@@ -947,8 +983,15 @@ class NetworkInterface(QueryResourceManager):
         config_type = "AWS::EC2::NetworkInterface"
         id_prefix = "eni-"
 
+    def augment(self, resources):
+        for r in resources:
+            r['Tags'] = r.pop('TagSet', [])
+        return resources
+
 
 NetworkInterface.filter_registry.register('flow-logs', FlowLogFilter)
+NetworkInterface.filter_registry.register(
+    'network-location', net_filters.NetworkLocation)
 
 
 @NetworkInterface.filter_registry.register('subnet')

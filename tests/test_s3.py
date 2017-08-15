@@ -1,4 +1,4 @@
-# Copyright 2016 Capital One Services, LLC
+# Copyright 2015-2017 Capital One Services, LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from __future__ import absolute_import, division, print_function, unicode_literals
+
 import functools
 import json
 import os
@@ -27,7 +29,7 @@ from c7n.resources import s3
 from c7n.mu import LambdaManager
 from c7n.ufuncs import s3crypt
 
-from common import BaseTest, event_data, skip_if_not_validating
+from .common import BaseTest, event_data, skip_if_not_validating
 
 
 class RestoreCompletionTest(TestCase):
@@ -112,6 +114,78 @@ class BucketMetrics(BaseTest):
         self.assertTrue('c7n.metrics' in resources[0])
         self.assertTrue(
             'AWS/S3.NumberOfObjects.Average' in resources[0]['c7n.metrics'])
+
+
+class BucketInventory(BaseTest):
+
+    def test_inventory(self):
+        bname = 'custodian-test-data'
+        inv_bname = 'custodian-inv'
+        inv_name = 'something'
+
+        self.patch(s3.S3, 'executor_factory', MainThreadExecutor)
+        self.patch(s3, 'S3_AUGMENT_TABLE', [])
+
+        session_factory = self.replay_flight_data('test_s3_inventory')
+
+        client = session_factory().client('s3')
+        client.create_bucket(Bucket=bname)
+        client.create_bucket(Bucket=inv_bname)
+        self.addCleanup(client.delete_bucket, Bucket=bname)
+        self.addCleanup(client.delete_bucket, Bucket=inv_bname)
+
+        inv = {
+            'Destination': {
+                'S3BucketDestination': {
+                    'Bucket': "arn:aws:s3:::%s" % inv_bname,
+                    'Format': 'CSV',
+                    'Prefix': 'abcdef'},
+            },
+            'IsEnabled': True,
+            'Id': inv_name,
+            'IncludedObjectVersions': 'All',
+            'OptionalFields': ['LastModifiedDate'],
+            'Schedule': {
+                'Frequency': 'Daily'}
+            }
+
+        client.put_bucket_inventory_configuration(
+            Bucket=bname,
+            Id=inv_name,
+            InventoryConfiguration=inv)
+
+        p = self.load_policy({
+            'name': 's3-inv',
+            'resource': 's3',
+            'filters': [
+                {'Name': 'custodian-test-data'}],
+            'actions': [
+                {'type': 'set-inventory',
+                 'destination': inv_bname,
+                 'name': inv_name}]
+            }, session_factory=session_factory)
+        self.assertEqual(len(p.run()), 1)
+        invs = client.list_bucket_inventory_configurations(
+            Bucket=bname).get('InventoryConfigurationList')
+        self.assertTrue(invs)
+        self.assertEqual(sorted(invs[0]['OptionalFields']), ['LastModifiedDate', 'Size'])
+
+        p = self.load_policy({
+            'name': 's3-inv',
+            'resource': 's3',
+            'filters': [
+                {'Name': 'custodian-test-data'}],
+            'actions': [
+                {'type': 'set-inventory',
+                 'destination': inv_bname,
+                 'state': 'absent',
+                 'name': inv_name}]
+            }, session_factory=session_factory)
+
+        self.assertEqual(len(p.run()), 1)
+        self.assertFalse(
+            client.list_bucket_inventory_configurations(
+                Bucket=bname).get('InventoryConfigurationList'))
 
 
 class BucketDelete(BaseTest):
@@ -746,6 +820,54 @@ class S3Test(BaseTest):
         self.assertEqual(len(resources), 1)
         self.assertRaises(ClientError, client.get_bucket_policy, Bucket=bname)
 
+    def test_remove_policy_matched(self):
+        self.patch(s3, 'S3_AUGMENT_TABLE', [
+            ('get_bucket_policy',  'Policy', None, 'Policy'),
+        ])
+        self.patch(s3.S3, 'executor_factory', MainThreadExecutor)
+        self.patch(
+            s3.RemovePolicyStatement, 'executor_factory', MainThreadExecutor)
+        self.patch(MainThreadExecutor, 'async', False)
+
+        bname = "custodian-policy-test"
+        statement = {
+            'Sid': 'Zebra',
+            'Effect': 'Deny',
+            'Principal': '*',
+            'Action': 's3:PutObject',
+            'Resource': 'arn:aws:s3:::%s/*' % bname,
+            'Condition': {
+                'StringNotEquals': {
+                    's3:x-amz-server-side-encryption': [
+                        'AES256', 'aws:kms']}}}
+
+        process_buckets = s3.RemovePolicyStatement.process
+        def enrich(self, buckets):
+            buckets[0]['CrossAccountViolations'] = [statement]
+            process_buckets(self, buckets)
+
+        self.patch(s3.RemovePolicyStatement, 'process', enrich)
+
+        session_factory = self.replay_flight_data('test_s3_remove_policy')
+        session = session_factory()
+        client = session.client('s3')
+        client.create_bucket(Bucket=bname)
+        client.put_bucket_policy(
+            Bucket=bname,
+            Policy=json.dumps({
+                'Version': '2012-10-17', 'Statement': [statement]}))
+        self.addCleanup(destroyBucket, client, bname)
+        p = self.load_policy({
+            'name': 'remove-policy',
+            'resource': 's3',
+            'filters': [{'Name': bname}],
+            'actions': [
+                {'type': 'remove-statements', 'statement_ids': 'matched'}],
+            }, session_factory=session_factory)
+        resources = p.run()
+        self.assertEqual(len(resources), 1)
+        self.assertRaises(ClientError, client.get_bucket_policy, Bucket=bname)
+
     def test_attach_encrypt_requires_role(self):
         self.assertRaises(
             ValueError, self.load_policy,
@@ -837,7 +959,7 @@ class S3Test(BaseTest):
 
         self.addCleanup(
             LambdaManager(functools.partial(session_factory, region='us-west-2')).remove,
-            s3crypt.get_function(None, role, False))
+            s3crypt.get_function(None, role))
 
         resources = p.run()
         self.assertEqual(len(resources), 1)
@@ -886,7 +1008,7 @@ class S3Test(BaseTest):
         self.addCleanup(
             LambdaManager(
                 functools.partial(session_factory, region='us-east-1')).remove,
-            s3crypt.get_function(None, role, True))
+            s3crypt.get_function(None, role))
         arn = 'arn:aws:sns:us-east-1:644160558196:custodian-attach-encrypt-test'
         self.addCleanup(session.client('sns').delete_topic, TopicArn=arn)
         self.addCleanup(session.client('logs').delete_log_group,
@@ -964,7 +1086,7 @@ class S3Test(BaseTest):
         self.addCleanup(
             LambdaManager(
                 functools.partial(session_factory, region='us-east-1')).remove,
-            s3crypt.get_function(None, role, True))
+            s3crypt.get_function(None, role))
         self.addCleanup(session.client('logs').delete_log_group,
             logGroupName='/aws/lambda/c7n-s3-encrypt')
 
@@ -1036,7 +1158,7 @@ class S3Test(BaseTest):
         self.addCleanup(
             LambdaManager(
                 functools.partial(session_factory, region='us-east-1')).remove,
-            s3crypt.get_function(None, role, True))
+            s3crypt.get_function(None, role))
         self.addCleanup(session.client('logs').delete_log_group,
             logGroupName='/aws/lambda/c7n-s3-encrypt')
 
@@ -1160,19 +1282,34 @@ class S3Test(BaseTest):
         self.addCleanup(destroyBucket, client, bname)
         generateBucketContents(session.resource('s3'), bname)
 
-        key_id = '845ab6f1-744c-4edc-b702-efae6836818a'
+        key_one = '845ab6f1-744c-4edc-b702-efae6836818a'
         p = self.load_policy({
             'name': 'encrypt-keys',
             'resource': 's3',
             'filters': [{'Name': bname}],
             'actions': [{'type': 'encrypt-keys',
                          'crypto': 'aws:kms',
-                         'key-id': key_id}]},
+                         'key-id': key_one}]},
             session_factory=session_factory)
         p.run()
         result = client.head_object(Bucket=bname, Key='home.txt')
         self.assertTrue('SSEKMSKeyId' in result)
-        self.assertTrue(key_id in result['SSEKMSKeyId'])
+        self.assertTrue(key_one in result['SSEKMSKeyId'])
+
+        # Now test that we can re-key it to something else
+        key_two = '5fd9f6d6-4294-4926-8719-1e85695e2ad6'
+        p = self.load_policy({
+            'name': 'encrypt-keys',
+            'resource': 's3',
+            'filters': [{'Name': bname}],
+            'actions': [{'type': 'encrypt-keys',
+                         'crypto': 'aws:kms',
+                         'key-id': key_two}]},
+            session_factory=session_factory)
+        p.run()
+        result = client.head_object(Bucket=bname, Key='home.txt')
+        self.assertTrue('SSEKMSKeyId' in result)
+        self.assertTrue(key_two in result['SSEKMSKeyId'])
 
     def test_global_grants_filter_option(self):
         self.patch(s3.S3, 'executor_factory', MainThreadExecutor)

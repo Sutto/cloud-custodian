@@ -1,4 +1,4 @@
-# Copyright 2016 Capital One Services, LLC
+# Copyright 2016-2017 Capital One Services, LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,19 +16,22 @@ Query capability built on skew metamodel
 
 tags_spec -> s3, elb, rds
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
+
 import functools
 import itertools
 import jmespath
 import json
 
+import six
 from botocore.client import ClientError
 from concurrent.futures import as_completed
 
 from c7n.actions import ActionRegistry
 from c7n.filters import FilterRegistry, MetricsFilter
-from c7n.tags import register_tags
+from c7n.tags import register_ec2_tags, register_universal_tags
 from c7n.utils import (
-    local_session, get_retry, chunks, camelResource)
+    local_session, generate_arn, get_retry, chunks, camelResource)
 from c7n.registry import PluginRegistry
 from c7n.manager import ResourceManager
 
@@ -88,7 +91,12 @@ class ResourceQuery(object):
 
         resources = self.filter(resource_type, **params)
         if client_filter:
-            resources = [r for r in resources if r[m.id] in identities]
+            # This logic was added to prevent the issue from:
+            # https://github.com/capitalone/cloud-custodian/issues/1398
+            if all(map(lambda r: isinstance(r, six.string_types), resources)):
+                resources = [r for r in resources if r in identities]
+            else:
+                resources = [r for r in resources if r[m.id] in identities]
 
         return resources
 
@@ -106,7 +114,7 @@ class QueryMeta(type):
         if attrs['resource_type']:
             m = ResourceQuery.resolve(attrs['resource_type'])
             # Generic cloud watch metrics support
-            if m.dimension and 'metrics':
+            if m.dimension:
                 attrs['filter_registry'].register('metrics', MetricsFilter)
             # EC2 Service boilerplate ...
             if m.service == 'ec2':
@@ -115,8 +123,12 @@ class QueryMeta(type):
                     'RequestLimitExceeded', 'Client.RequestLimitExceeded')))
                 # Generic ec2 resource tag support
                 if getattr(m, 'taggable', True):
-                    register_tags(
+                    register_ec2_tags(
                         attrs['filter_registry'], attrs['action_registry'])
+            if getattr(m, 'universal_taggable', False):
+                register_universal_tags(
+                    attrs['filter_registry'], attrs['action_registry'])
+
         return super(QueryMeta, cls).__new__(cls, name, parents, attrs)
 
 
@@ -229,9 +241,8 @@ class ConfigSource(Source):
         return resources
 
 
+@six.add_metaclass(QueryMeta)
 class QueryResourceManager(ResourceManager):
-
-    __metaclass__ = QueryMeta
 
     resource_type = ""
 
@@ -242,6 +253,8 @@ class QueryResourceManager(ResourceManager):
     chunk_size = 20
 
     permissions = ()
+
+    _generate_arn = None
 
     def __init__(self, data, options):
         super(QueryResourceManager, self).__init__(data, options)
@@ -324,6 +337,30 @@ class QueryResourceManager(ResourceManager):
         IAM.
         """
         return self.config.account_id
+
+    def get_arns(self, resources):
+        arns = []
+        for r in resources:
+            _id = r[self.get_model().id]
+            if 'arn' in _id[:3]:
+                arns.append(_id)
+            else:
+                arns.append(self.generate_arn(_id))
+        return arns
+
+    @property
+    def generate_arn(self):
+        """ Generates generic arn if ID is not already arn format.
+        """
+        if self._generate_arn is None:
+            self._generate_arn = functools.partial(
+                generate_arn,
+                self.get_model().service,
+                region=self.config.region,
+                account_id=self.account_id,
+                resource_type=self.get_model().type,
+                separator='/')
+        return self._generate_arn
 
 
 def _batch_augment(manager, model, detail_spec, resource_set):
