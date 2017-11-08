@@ -817,6 +817,39 @@ class MissingPolicyStatementFilter(Filter):
             return False
         return True
 
+@filters.register('policy-value')
+class PolicyValue(ValueFilter):
+    """Find buckets who match a given value for their policy
+
+    :example:
+
+        .. code-block: yaml
+
+            policies:
+              - name: s3-bucket-with-cloudtrail
+                resource: s3
+                filters:
+                  - type: policy-value
+                    key:
+                    value:
+    """
+
+    schema = type_schema('policy-value', rinherit=ValueFilter.schema)
+    permissions = ('s3:GetBucketPolicy',)
+
+    def process(self, resources, event=None):
+        matches = []
+        for item in resources:
+            policy = item.get('Policy', None)
+            if policy is None:
+                continue
+            if 'c7n:ParsedPolicy' not in item:
+                parsedPolicy = json.loads(policy)
+                item['c7n:ParsedPolicy'] = parsedPolicy
+            if self.match(item['c7n:ParsedPolicy']):
+                matches.append(item)
+        return matches
+
 
 @filters.register('bucket-notification')
 class BucketNotificationFilter(ValueFilter):
