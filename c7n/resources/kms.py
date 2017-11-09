@@ -39,6 +39,8 @@ class KeyBase(object):
             info = client.describe_key(KeyId=key_id)['KeyMetadata']
             r.update(info)
 
+            tags = []
+
             try:
                 tags = client.list_resource_tags(KeyId=key_id)['Tags']
             except ClientError as e:
