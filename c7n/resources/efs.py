@@ -77,6 +77,17 @@ class ElasticFileSystemMountTarget(ChildResourceManager):
         filter_name = 'MountTargetId'
         filter_type = 'scalar'
 
+@resources.register('efs-mount-target')
+class ElasticFileSystemMountTarget(QueryResourceManager):
+
+    class resource_type(object):
+        service = 'efs'
+        parent_enum_spec = (ElasticFileSystem, '[].FileSystemId', 'FileSystemId', False)
+        enum_spec = ('describe_mount_targets', 'MountTargets', None)
+        name = id = 'MountTargetId'
+        date = None
+        dimension = None
+
 
 @ElasticFileSystemMountTarget.filter_registry.register('subnet')
 class Subnet(SubnetFilter):
