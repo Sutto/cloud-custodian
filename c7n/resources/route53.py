@@ -121,6 +121,7 @@ class ResourceRecordSet(ChildResourceManager):
         service = 'route53'
         type = 'rrset'
         parent_spec = ('hostedzone', 'HostedZoneId', None)
+        parent_enum_spec = (HostedZone, '[].Id', 'HostedZoneId', False)
         enum_spec = ('list_resource_record_sets', 'ResourceRecordSets', None)
         name = id = 'Name'
         filter_name = None
