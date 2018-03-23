@@ -152,16 +152,17 @@ class TestValueFilter(unittest.TestCase):
         self.assertEqual(res, (sentinel, 0))
 
         vf.vtype = 'expr'
-        value = 'tag:xtra'
-        sentinel = None
+        sentinel = 'tag:xtra'
+        value = None
         res = vf.process_value_type(sentinel, value, resource)
-        self.assertEqual(res, (None, 'hello'))
+        self.assertEqual(res, ('hello', None))
 
         vf.vtype = 'expr'
-        value = 'a'
-        sentinel = None
+        sentinel = 'a'
+        value = 2
         res = vf.process_value_type(sentinel, value, resource)
-        self.assertEqual(res, (None, 1))
+        self.assertEqual(res, (1, 2))
+
 
         vf.vtype = 'unique_size'
         value = [1, 2, 3, 1, 5]
