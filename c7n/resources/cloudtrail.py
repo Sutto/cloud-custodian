@@ -17,7 +17,7 @@ import logging
 
 from c7n.actions import Action, BaseAction
 from c7n.exceptions import PolicyValidationError
-from c7n.filters import ValueFilter, Filter, FilterRegistery
+from c7n.filters import ValueFilter, Filter, FilterRegistery, OPERATORS
 from c7n.manager import resources
 from c7n.tags import universal_augment
 from c7n.query import DescribeSource, QueryResourceManager, TypeInfo
@@ -27,7 +27,6 @@ import re
 
 log = logging.getLogger('c7n.resources.cloudtrail')
 filters = FilterRegistry('cloudtrail.filters')
-
 
 @resources.register('cloudtrail')
 class CloudTrail(QueryResourceManager):
@@ -352,3 +351,26 @@ class MonitoredCloudtrailMetric(ValueFilter):
 
     def process(self, resources, event=None):
         return [resource for resource in resources if self.checkResourceMetricFilters(resource)]
+
+@filters.register('in-home-region')
+class InHomeRegionFilter(Filter):
+    """Filters for all cloudtrail trails that are currently in their home region.
+
+    :example:
+
+    .. code-block:: yaml
+
+            policies:
+              - name: cloudtrail-in-home-region
+                resource: cloudtrail
+                filters:
+                  - type: in-home-region
+                actions:
+                  - delete-global-grants
+    """
+    schema = type_schema('in-home-region')
+
+    def process(self, trails, event=None):
+        session = local_session(self.manager.session_factory)
+        current_region = session.region_name
+        return filter(lambda t: t['HomeRegion'] == current_region, trails)
