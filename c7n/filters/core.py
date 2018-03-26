@@ -471,11 +471,12 @@ class ValueFilter(Filter):
             return sentinel, value.strip().lower()
 
         elif self.vtype == 'expr':
-            return sentinel, self.get_resource_value(value, resource)
+            sentinel = self.get_resource_value(sentinel, resource)
+            return sentinel, value
 
         elif self.vtype == 'integer':
             try:
-                value = int(value.strip())
+                value = giint(value.strip())
             except ValueError:
                 value = 0
         elif self.vtype == 'size':
