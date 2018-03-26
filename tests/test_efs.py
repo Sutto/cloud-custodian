@@ -73,6 +73,15 @@ class ElasticFileSystem(BaseTest):
         resources = sorted(resources, key=itemgetter('MountTargetId'))
         self.assertEqual(resources[0]['MountTargetId'], 'fsmt-a47385dd')
 
+    def test_mount_target_loading(self):
+        factory = self.replay_flight_data('test_efs_subresource')
+        p = self.load_policy({
+            'name': 'test-mount-targets',
+            'resource': 'efs-mount-target',
+            }, session_factory=factory)
+        resources = p.run()
+        self.assertEqual(len(resources), 2)
+
     def test_delete(self):
         factory = self.replay_flight_data('test_efs_delete')
         p = self.load_policy({
@@ -87,4 +96,3 @@ class ElasticFileSystem(BaseTest):
         client = factory().client('efs')
         state = client.describe_file_systems().get('FileSystems', [])
         self.assertEqual(state, [])
-
