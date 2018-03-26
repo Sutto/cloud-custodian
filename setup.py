@@ -30,5 +30,6 @@ setup(
         "jsonpatch>=1.21",
         "argcomplete",
         "tabulate",
+        "rollbar"
     ],
 )
