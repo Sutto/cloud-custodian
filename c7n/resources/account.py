@@ -120,6 +120,7 @@ class CloudTrailEnabled(Filter):
         **{'multi-region': {'type': 'boolean'},
            'global-events': {'type': 'boolean'},
            'current-region': {'type': 'boolean'},
+           'home-region': {'type': 'boolean'},
            'running': {'type': 'boolean'},
            'notifies': {'type': 'boolean'},
            'file-digest': {'type': 'boolean'},
@@ -139,6 +140,9 @@ class CloudTrailEnabled(Filter):
             current_region = session.region_name
             trails  = [t for t in trails if t.get(
                 'HomeRegion') == current_region or t.get('IsMultiRegionTrail')]
+        if self.data.get('home-region'):
+            current_region = session.region_name
+            trails  = [t for t in trails if t.get('HomeRegion') == current_region]
         if self.data.get('kms'):
             trails = [t for t in trails if t.get('KmsKeyId')]
         if self.data.get('kms-key'):
