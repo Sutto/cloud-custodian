@@ -303,6 +303,41 @@ class ConfigEnabled(Filter):
             return []
         return resources
 
+@filters.register('guard-duty')
+class GuardDuty(ValueFilter):
+    """Return annotated account resource if guard duty filter matches (on current rgion detector)
+
+    For example to determine if an account has guardduty enabled in the current region:
+
+    .. code-block:: yaml
+
+      policies:
+        - name: without-guardduty
+          resource: account
+          filters:
+            - type: guard-duty
+              key: Enabled
+              value: absent
+    """
+    schema = type_schema('guard-duty', rinherit=ValueFilter.schema)
+
+    permissions = ('guardduty:ListDetectors', 'guardduty:GetDetector')
+
+    def process(self, resources, event=None):
+        account = resources[0]
+        if not account.get('c7n:guard-duty'):
+            client = local_session(
+                self.manager.session_factory).client('guardduty')
+            detectors = client.list_detectors()['DetectorIds']
+            if len(detectors) > 0:
+                details = client.get_detector(DetectorId=detectors[0])
+                account['c7n:guard-duty'] = details
+            else:
+                account['c7n:guard-duty'] = None
+        if self.match(account['c7n:guard-duty']):
+            return resources
+        return []
+
 
 @filters.register('iam-summary')
 class IAMSummary(ValueFilter):
