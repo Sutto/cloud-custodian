@@ -16,7 +16,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 import re
 
 from c7n.actions import BaseAction
-from c7n.filters import MetricsFilter, ShieldMetrics, Filter
+from c7n.filters import MetricsFilter, ShieldMetrics, Filter, ValueFilter
 from c7n.manager import resources
 from c7n.query import QueryResourceManager, DescribeSource, TypeInfo
 from c7n.tags import universal_augment
@@ -147,6 +147,25 @@ class IsWafEnabled(Filter):
             elif not state and target_acl_id and r['WebACLId'] != target_acl_id:
                 results.append(r)
         return results
+
+@Distribution.filter_registry.register('distribution-config')
+class DistributionConfigFilter(ValueFilter):
+    schema = type_schema('distribution-config', rinherit=ValueFilter.schema)
+    permissions = ('cloudfront:GetDistributionConfig',)
+
+    def process(self, resources, event=None):
+        self.annotate_distribution_config(resources)
+        return [resource for resource in resources
+                if self.match(resource['c7n:DistributionConfig'])]
+
+    def annotate_distribution_config(self, resources):
+        client = local_session( self.manager.session_factory).client('cloudfront')
+        for resource in resources:
+            if not 'c7n:DistributionConfig' in resource:
+                config = self.manager.retry(client.get_distribution_config, Id=resource['Id'])
+                resource['c7n:DistributionConfig'] = config['DistributionConfig']
+
+
 
 
 @Distribution.filter_registry.register('mismatch-s3-origin')
