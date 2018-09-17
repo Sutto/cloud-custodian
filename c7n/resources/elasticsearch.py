@@ -16,7 +16,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 import itertools
 
 from c7n.actions import Action, ModifyVpcSecurityGroupsAction
-from c7n.filters import MetricsFilter
+from c7n.filters import CrossAccountAccessFilter, MetricsFilter, FilterRegistry
 from c7n.filters.vpc import SecurityGroupFilter, SubnetFilter, VpcFilter
 from c7n.manager import resources
 from c7n.query import QueryResourceManager, TypeInfo
@@ -60,6 +60,29 @@ class ElasticSearchDomain(QueryResourceManager):
             return list(itertools.chain(
                 *w.map(_augment, chunks(domains, 5))))
 
+@ElasticSearchDomain.filter_registry.register('cross-account')
+class ElasticSearchCrossAccountAccessFilter(CrossAccountAccessFilter):
+    """Filters elastic search domains with cross-account permissions
+
+    The whitelist parameter can be used to prevent certain accounts
+    from being included in the results (essentially stating that these
+    accounts permissions are allowed to exist)
+
+    :example:
+
+    .. code-block:: yaml
+
+            policies:
+              - name: es-cross-account
+                resource: elasticsearch
+                filters:
+                  - type: cross-account
+                    whitelist:
+                      - 'IAM-Policy-Cross-Account-Access'
+
+    """
+
+    policy_attribute = 'AccessPolicies'
 
 ElasticSearchDomain.filter_registry.register('marked-for-op', TagActionFilter)
 
