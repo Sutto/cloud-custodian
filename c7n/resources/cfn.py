@@ -14,6 +14,7 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 import logging
+import json
 
 from concurrent.futures import as_completed
 
@@ -40,6 +41,23 @@ class CloudFormation(QueryResourceManager):
         date = 'CreationTime'
         config_type = 'AWS::CloudFormation::Stack'
 
+    def augment(self, stacks):
+        client = local_session(self.session_factory).client('cloudformation')
+        model = self.get_model()
+
+        def _augment(stack):
+            stack_id = stack['StackId']
+            full_stack = self.retry(client.describe_stacks, StackName=stack_id)['Stacks'][0]
+            stack_policy = self.retry(client.get_stack_policy, StackName=stack_id).get('StackPolicyBody', None)
+
+            full_stack['StackPolicyBody'] = stack_policy
+            if stack_policy:
+                full_stack['StackPolicy'] = json.loads(stack_policy)
+            return full_stack
+
+
+
+        return map(_augment, stacks)
 
 @CloudFormation.action_registry.register('delete')
 class Delete(BaseAction):
