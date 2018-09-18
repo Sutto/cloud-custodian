@@ -1489,7 +1489,8 @@ class MonitoredCloudtrailMetric(Filter):
     schema = type_schema('alarmed-cloudtrail-patterns', **{
         'patterns': {'type': 'array'},
         'topic-subscription': {'type': 'boolean'},
-        'alarm': {'type': 'boolean'}
+        'alarm': {'type': 'boolean'},
+        'ignore-cross-account-authorization': {'type': 'boolean'}
     })
 
     permissions = ('logs:DescribeMetricFilters', 'cloudwatch:DescribeAlarms',
@@ -1498,8 +1499,12 @@ class MonitoredCloudtrailMetric(Filter):
     def find_subscribed_topic_arns(self, session, topicArns, region):
         sns = session.client('sns', region_name=region)
         def arn_has_subscriptions(arn):
-            subscriptions = sns.list_subscriptions_by_topic(TopicArn=arn)['Subscriptions']
-            return any(subscriptions)
+            try:
+                subscriptions = sns.list_subscriptions_by_topic(TopicArn=arn)['Subscriptions']
+                return any(subscriptions)
+            except sns.exceptions.NotFoundException:
+                return False
+
         return filter(arn_has_subscriptions, topicArns)
 
     def all_alarms(self, session, region):
@@ -1527,6 +1532,8 @@ class MonitoredCloudtrailMetric(Filter):
                 raise
 
     def alarm_contains_metrics(self, alarm, metrics):
+        if 'Namespace' not in alarm or 'MetricName' not in alarm:
+            return False
         pair = (alarm['Namespace'], alarm['MetricName'])
         return pair in metrics
 
@@ -1576,10 +1583,24 @@ class MonitoredCloudtrailMetric(Filter):
                 return False
             consideredSet = filteredAlarms
             if self.data.get('topic-subscription'):
+                ignore_cross_account = self.data.get('ignore-cross-account-authorization', False)
                 alarmSNSTopics = sum(map(lambda alarm: alarm['AlarmActions'], filteredAlarms), [])
                 if not alarmSNSTopics:
                     return False
-                consideredSet = self.find_subscribed_topic_arns(session, alarmSNSTopics, groupRegion)
+                try:
+                    consideredSet = self.find_subscribed_topic_arns(session, alarmSNSTopics, groupRegion)
+                except ClientError as e:
+                    consideredSet = []
+                    # It's a common practice to have a SNS topic in a seperate account that this listens
+                    # to, and hence this
+                    if e.response['Error']['Code'] == 'AuthorizationError':
+                        topicAccountIDs = map(lambda x: x.split(":")[4], alarmSNSTopics)
+                        currentAccountIDs = map(lambda alarm: alarm['AlarmArn'].split(":")[4], filteredAlarms)
+                        otherAccountIDs = [accountID for accountID in topicAccountIDs if accountID not in currentAccountIDs]
+                        if ignore_cross_account and any(topicAccountIDs):
+                            # IF we have any accounts, and we can ignore the cross account set,
+                            # set the list to other accounts as respective.
+                            consideredSet = otherAccountIDs
 
         return any(consideredSet)
 
