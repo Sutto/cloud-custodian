@@ -386,6 +386,78 @@ class UpgradeAvailable(Filter):
         return results
 
 
+@filters.register('public-subnet')
+class PublicSubnet(Filter):
+    """ Scan DB instances for those in public subnets.
+
+    Checks for RDS instances in subnets that are publicly routable.
+
+    Based on https://github.com/awslabs/aws-config-rules/blob/master/python/rds_vpc_public_subnet.py
+
+    :example:
+
+    .. code-block:: yaml
+
+            policies:
+              - name: rds-with-public-subnet
+                resource: rds
+                filters:
+                  - type: public-subnet
+
+    """
+
+    schema = type_schema('public-subnet',
+                         major={'type': 'boolean'},
+                         value={'type': 'boolean'})
+    permissions = ('ec2:DescribeRouteTables',)
+
+    def process(self, resources, event=None):
+        route_tables = self.manager.get_resource_manager('route-table').resources()
+        results = []
+        for instance in resources:
+            vpc_id = instance['DBSubnetGroup']['VpcId']
+            subnet_ids = [s['SubnetIdentifier'] for s in instance['DBSubnetGroup']['Subnets']]
+
+            private = True
+
+            def public_route(route):
+                public_destination = 'DestinationCidrBlock' in route and route['DestinationCidrBlock'] == '0.0.0.0/0'
+                has_igw = 'GatewayId' in route and route['GatewayId'].startswith('igw-')
+                return public_destination or has_igw
+
+            for subnet_id in subnet_ids:
+                main_table_is_public = False
+                no_explicit_association = True
+                explicit_association_is_public = False
+
+                relevant_tables = [rt for rt in route_tables if rt['VpcId'] == vpc_id]
+                for route_table in relevant_tables:
+                    for association in route_table['Associations']:
+                        if association['Main'] == True:
+                            for route in route_table['Routes']:
+                                if public_route(route):
+                                    main_table_is_public = True
+                        elif association['SubnetId'] == subnet_id:
+                            no_explicit_association = False
+                            for route in route_table['Routes']:
+                                if public_route(route):
+                                    explicit_association_is_public = True
+
+            if (main_table_is_public and no_explicit_association) or explicit_association_is_public:
+                private = False
+
+            instance['c7n:PublicSubnet'] = {
+                'Private': private,
+                'MainTableIsPublic': main_table_is_public,
+                'NoExplicitAssociation': no_explicit_association,
+                'ExplicitAssociationIsPublic': explicit_association_is_public
+            }
+
+            if not private:
+                results.append(instance)
+        return results
+
+
 @actions.register('upgrade')
 class UpgradeMinor(BaseAction):
     """Upgrades a RDS instance to the latest major/minor version available
