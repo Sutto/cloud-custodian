@@ -18,6 +18,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 
 from concurrent.futures import as_completed
 import re
+from itertools import chain
 
 from botocore.exceptions import ClientError
 
@@ -692,6 +693,33 @@ class SSLPolicyFilter(Filter):
 
         return results
 
+@filters.register('load-balancer-policies')
+class LoadBalancerPolicies(ValueFilter):
+
+    schema = schema = type_schema('load-balancer-policies', rinherit=ValueFilter.schema)
+    permissions = ("elasticloadbalancing:DescribeLoadBalancerPolicies",)
+
+    def process(self, balancers, event=None):
+        augmented = self.augment_policies(balancers)
+        return [lb for lb in augmented if self.match(lb['c7n:PolicyDescriptions'])]
+
+    def augment_policies(self, resources):
+        client = local_session(self.manager.session_factory).client('elb')
+        return [self.augment_policy(r, client) for r in resources]
+
+    def augment_policy(self, resource, client):
+        if 'c7n:PolicyDescriptions' in resource:
+            return resource
+
+        policy_names = list(chain.from_iterable(ld['PolicyNames'] for ld in resource['ListenerDescriptions']))
+
+        reply = client.describe_load_balancer_policies(
+            LoadBalancerName=resource['LoadBalancerName'],
+            PolicyNames=policy_names,
+        )['PolicyDescriptions']
+
+        resource['c7n:PolicyDescriptions'] = reply
+        return resource
 
 @filters.register('healthcheck-protocol-mismatch')
 class HealthCheckProtocolMismatch(Filter):
