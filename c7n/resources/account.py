@@ -1279,6 +1279,49 @@ class SetEbsEncryption(BaseAction):
                 KmsKeyId=self.data['key'])
 
 
+@filters.register('organization')
+class OrganizationDetails(ValueFilter):
+    """Return annotated account resource if the organization description matches.
+
+    For example, this can use used to filter to accounts with an organization.
+
+    Example iam summary wrt to matchable fields::
+
+      {
+        "xyz": 1
+      }
+
+    .. code-block:: yaml
+
+      policies:
+        - name: account-with-organization
+          resource: account
+          filters:
+            - type: organization
+              key: "."
+              value: present
+    """
+    schema = type_schema('organization', rinherit=ValueFilter.schema)
+    schema_alias = False
+    permissions = ('organizations:DescribeAccount',)
+
+    def process(self, resources, event=None):
+        account = resources[0]
+        if not account.get('c7n:organization'):
+            client = local_session(self.manager.session_factory).client('organizations')
+            try:
+                summary = client.describe_organization()['Organization']
+            except ClientError as e:
+                if e.response['Error']['Code'] == 'AWSOrganizationsNotInUseException':
+                    summary = {}
+                else:
+                    raise
+            account['c7n:organization'] = summary
+        if self.match(account['c7n:organization']):
+            return resources
+        return []
+
+
 @filters.register('s3-public-block')
 class S3PublicBlock(ValueFilter):
     """Check for s3 public blocks on an account.
