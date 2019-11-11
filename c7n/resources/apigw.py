@@ -591,6 +591,8 @@ class DeleteRestIntegration(BaseAction):
 class FilterRestMethod(ValueFilter):
     """Filter rest resources based on a key value for the rest method of the api
 
+    Adding the `matched` flag will filter on previously matched rest methods
+
     :example:
 
     .. code-block:: yaml
@@ -609,18 +611,32 @@ class FilterRestMethod(ValueFilter):
         method={'type': 'string', 'enum': [
             'all', 'ANY', 'PUT', 'GET', "POST",
             "DELETE", "OPTIONS", "HEAD", "PATCH"]},
+        matched={'type': 'boolean'},
         rinherit=ValueFilter.schema)
     schema_alias = False
     permissions = ('apigateway:GET',)
 
     def process(self, resources, event=None):
         method_set = self.data.get('method', 'all')
+        match_existing = self.data.get('matched', False)
         # 10 req/s with burst to 40
         client = utils.local_session(
             self.manager.session_factory).client('apigateway')
 
         # uniqueness constraint validity across apis?
         resource_map = {r['id']: r for r in resources}
+
+        if match_existing:
+            existing = []
+            for r in resources:
+                listeners = r.get(ANNOTATION_KEY_MATCHED_METHODS, [])
+                filtered_listeners = [l for l in listeners if self.match(l)]
+
+                if filtered_listeners:
+                    r = dict(r)
+                    r[ANNOTATION_KEY_MATCHED_METHODS] = filtered_listeners
+                    existing.append(r)
+            return existing
 
         futures = {}
         results = set()
@@ -654,6 +670,7 @@ class FilterRestMethod(ValueFilter):
 
     def process_task_set(self, client, task_set):
         results = []
+
         for r, m in task_set:
             method = client.get_method(
                 restApiId=r['restApiId'],
