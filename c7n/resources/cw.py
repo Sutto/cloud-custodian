@@ -290,7 +290,6 @@ class AssociatedLambdaFilter(Filter):
     schema = type_schema('for-lambda')
 
     def process(self, resources, event=None):
-
         regional_lambda_names = {}
 
         def fetch_region_names(region):
@@ -298,16 +297,13 @@ class AssociatedLambdaFilter(Filter):
                 client = self.manager.session_factory(region=region).client('lambda')
                 names = [function['FunctionName'] for function in client.list_functions()['Functions']]
                 regional_lambda_names[region] = names
-
             return regional_lambda_names[region]
-
         this_region = fetch_region_names(self.manager.config.region)
 
         def matches(resource):
             name = resource['logGroupName']
             if not name.startswith('/aws/lambda/'):
                 return False
-
             function = name.split("/")[3]
             function_names = []
             if "." in function:
@@ -315,10 +311,8 @@ class AssociatedLambdaFilter(Filter):
                 function_names = fetch_region_names(region)
             else:
                 function_names = this_region
-
             return function in function_names
-
-        return filter(matches, resources)
+        return list(filter(matches, resources))
 
 
 @LogGroup.filter_registry.register('cross-account')
