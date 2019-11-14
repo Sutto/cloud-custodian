@@ -55,9 +55,8 @@ class CloudFormation(QueryResourceManager):
                 full_stack['StackPolicy'] = json.loads(stack_policy)
             return full_stack
 
+        return [_augment(stack) for stack in stacks]
 
-
-        return map(_augment, stacks)
 
 @CloudFormation.action_registry.register('delete')
 class Delete(BaseAction):
