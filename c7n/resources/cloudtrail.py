@@ -375,7 +375,7 @@ class InHomeRegionFilter(Filter):
     def process(self, trails, event=None):
         session = local_session(self.manager.session_factory)
         current_region = session.region_name
-        return filter(lambda t: t['HomeRegion'] == current_region, trails)
+        return [t for t in trails if t['HomeRegion'] == current_region]
 
 @CloudTrail.filter_registry.register('trail-status')
 class TrailStatusFilter(ValueFilter):
