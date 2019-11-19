@@ -21,6 +21,8 @@ import re
 from botocore.exceptions import ClientError
 from datetime import datetime, timedelta
 
+import logging
+
 from dateutil.parser import parse as parse_date
 from dateutil.tz import tzutc
 
@@ -1467,7 +1469,7 @@ class GlueEncryptionEnabled(MultiAttrFilter):
             resource[self.annotation][kmskey] = self.data[kmskey]
         return resource[self.annotation]
 
-
+acp_log = logging.getLogger('custodian.alarmedCloudTrailPatterns')
 @filters.register('alarmed-cloudtrail-patterns')
 class MonitoredCloudtrailMetric(Filter):
     """Finds cloudtrails with logging and a metric filter. Is a subclass of ValueFilter,
@@ -1499,10 +1501,12 @@ class MonitoredCloudtrailMetric(Filter):
     def find_subscribed_topic_arns(self, session, topicArns, region):
         sns = session.client('sns', region_name=region)
         def arn_has_subscriptions(arn):
+            acp_log.info("Checking subscriptions for %s" % arn)
             try:
                 subscriptions = sns.list_subscriptions_by_topic(TopicArn=arn)['Subscriptions']
                 return any(subscriptions)
             except sns.exceptions.NotFoundException:
+                acp_log.info("ARN %s was not found in list_subscriptions_by_topic" % arn)
                 return False
 
         return filter(arn_has_subscriptions, topicArns)
@@ -1511,9 +1515,11 @@ class MonitoredCloudtrailMetric(Filter):
         client = session.client('cloudwatch', region_name=region)
         paginator = client.get_paginator('describe_alarms')
         try:
+            acp_log.info("Listing all alarms in region %s" % region)
             results = paginator.paginate().build_full_result()
             return results['MetricAlarms']
         except ClientError as e:
+            acp_log.info("Error getting list of all alarms: %s" % e.response['Error']['Code'])
             if e.response['Error']['Code'] == 'ResourceNotFoundException':
                 return []
             else:
@@ -1533,6 +1539,7 @@ class MonitoredCloudtrailMetric(Filter):
 
     def alarm_contains_metrics(self, alarm, metrics):
         if 'Namespace' not in alarm or 'MetricName' not in alarm:
+            acp_log.info("No namespace / metric associated with alarm")
             return False
         pair = (alarm['Namespace'], alarm['MetricName'])
         return pair in metrics
@@ -1544,23 +1551,29 @@ class MonitoredCloudtrailMetric(Filter):
     def text_matches_patterns(self, metric_filter):
         patterns = self.data['patterns']
         if 'filterPattern' not in metric_filter:
+            acp_log.info("No pattern match defined")
             return False
         text = metric_filter['filterPattern']
         return all(map(lambda pattern: bool(re.search(pattern, text, flags=re.IGNORECASE)), patterns))
 
     def cloudtrail_matches_filter(self, trail):
+        acp_log.info("Checking trail with arn = %s" % trail['TrailARN'])
         logGroupArn = trail.get('CloudWatchLogsLogGroupArn')
         if not logGroupArn:
+            acp_log.info("No cloudwatch log group associated with trail")
             return False
         groupName = re.search(':log-group:([^:]+)', logGroupArn).group(1)
         # When we have a shadow group, we need to process the given region instead of the base.
         groupRegion = re.search('arn:aws:logs:([^:]+):', logGroupArn).group(1)
+
+        acp_log.info("extracted name = %s, region = %s from arn %s" %(groupName, groupRegion, logGroupArn))
 
         session = local_session(self.manager.session_factory)
 
         filters = self.fetch_metric_filters_for_log_group(session, groupName, groupRegion)
         matchingFilters = filter(self.text_matches_patterns, filters)
         if not matchingFilters:
+            acp_log.info("None of the found filters match a pattern")
             return False
 
         # We need to filter the list of transformations to those that emit a value, and then put
@@ -1569,6 +1582,7 @@ class MonitoredCloudtrailMetric(Filter):
         transformations = sum(allTransformations, [])
         emittedMetrics = map(lambda t: (t['metricNamespace'], t['metricName']), transformations)
         if not emittedMetrics:
+            acp_log.info("No emitted metrics found from the available metric transformations")
             return False
 
         consideredSet = emittedMetrics
@@ -1580,12 +1594,14 @@ class MonitoredCloudtrailMetric(Filter):
                 return self.alarm_contains_metrics(alarm, emittedMetrics)
             filteredAlarms = filter(alarmFilter, metricAlarms)
             if not filteredAlarms:
+                acp_log.info("Non alarms in the account region match the defined metrics")
                 return False
             consideredSet = filteredAlarms
             if self.data.get('topic-subscription'):
                 ignore_cross_account = self.data.get('ignore-cross-account-authorization', False)
                 alarmSNSTopics = sum(map(lambda alarm: alarm['AlarmActions'], filteredAlarms), [])
                 if not alarmSNSTopics:
+                    acp_log.info("No matching SNS topics in alarm actions")
                     return False
                 try:
                     consideredSet = self.find_subscribed_topic_arns(session, alarmSNSTopics, groupRegion)
@@ -1594,6 +1610,7 @@ class MonitoredCloudtrailMetric(Filter):
                     # It's a common practice to have a SNS topic in a seperate account that this listens
                     # to, and hence this
                     if e.response['Error']['Code'] == 'AuthorizationError':
+                        acp_log.info("Cross account authorization error")
                         topicAccountIDs = map(lambda x: x.split(":")[4], alarmSNSTopics)
                         currentAccountIDs = map(lambda alarm: alarm['AlarmArn'].split(":")[4], filteredAlarms)
                         otherAccountIDs = [accountID for accountID in topicAccountIDs if accountID not in currentAccountIDs]
