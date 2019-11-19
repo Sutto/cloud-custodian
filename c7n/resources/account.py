@@ -1545,7 +1545,7 @@ class MonitoredCloudtrailMetric(Filter):
 
     def account_matches_filters(self, account):
         trails = self.manager.get_resource_manager('cloudtrail').resources()
-        self.logger.info("Checkin account again %d trails" % len(trails))
+        self.log.info("Checkin account again %d trails" % len(trails))
         return any(list(filter(self.cloudtrail_matches_filter, trails)))
 
     def text_matches_patterns(self, metric_filter):
