@@ -1599,7 +1599,7 @@ class MonitoredCloudtrailMetric(Filter):
             consideredSet = filteredAlarms
             if self.data.get('topic-subscription'):
                 ignore_cross_account = self.data.get('ignore-cross-account-authorization', False)
-                alarmSNSTopics = sum(list(map(lambda alarm: alarm['AlarmActions'], filteredAlarms), []))
+                alarmSNSTopics = sum(list(map(lambda alarm: alarm['AlarmActions'], filteredAlarms)), [])
                 if not alarmSNSTopics:
                     self.log.info("No matching SNS topics in alarm actions")
                     return False
