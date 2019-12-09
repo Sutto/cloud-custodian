@@ -46,13 +46,13 @@ class CloudTrail(QueryResourceManager):
             return DescribeTrail(self)
         return super(CloudTrail, self).get_source(source_type)
 
+    filter_registry = filters
+
 
 class DescribeTrail(DescribeSource):
 
     def augment(self, resources):
         return universal_augment(self.manager, resources)
-
-    filter_registry = filters
 
 @filters.register('is-shadow')
 class IsShadow(Filter):
