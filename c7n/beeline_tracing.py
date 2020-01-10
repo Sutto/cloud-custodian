@@ -9,7 +9,7 @@ from c7n.output import tracer_outputs
 HAVE_HONEYCOMB = 'HONEYCOMB_WRITE_KEY' in os.environ and 'HONEYCOMB_DATA_SET' in os.environ
 
 
-@tracer_outputs.register('beeline', HAVE_HONEYCOMB)
+@tracer_outputs.register('beeline', condition=HAVE_HONEYCOMB)
 class BeelineTracer(object):
     service_name = 'custodian-trace'
 
@@ -28,7 +28,7 @@ class BeelineTracer(object):
             yield self
 
     def __enter__(self):
-        self.span = beeline.start_span(context={'service_name': self.sevice_name})
+        self.span = beeline.start_span(context={'service_name': self.service_name})
 
         p = self.ctx.policy
         beeline.add_context({

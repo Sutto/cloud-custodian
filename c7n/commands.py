@@ -40,7 +40,7 @@ from c7n.credentials import UnableToAssumeRole
 from c7n import provider
 from c7n.resources import load_resources
 
-from c7n.beeline_tracer import traceable
+from c7n.beeline_tracing import traceable
 from c7n import error_tracking
 log = logging.getLogger('custodian.commands')
 

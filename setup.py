@@ -34,6 +34,7 @@ setup(
         "tabulate>=0.8.2",
         "urllib3",
         "certifi",
-        "rollbar"
+        "rollbar",
+        "honeycomb-beeline"
     ],
 )
