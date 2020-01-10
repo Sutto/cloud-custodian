@@ -15,6 +15,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 
 from collections import deque
 import logging
+import beeline
 
 from c7n import cache
 from c7n.executor import ThreadPoolExecutor
@@ -94,6 +95,7 @@ class ResourceManager(object):
             return klass(self.ctx, {'source': self.source_type})
         return klass(self.ctx, data or {})
 
+    @beeline.traced(name='ResourceManager.filter_resources')
     def filter_resources(self, resources, event=None):
         original = len(resources)
         if event and event.get('debug', False):

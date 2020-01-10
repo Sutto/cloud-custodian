@@ -10,3 +10,4 @@ python-dateutil>=2.6
 urllib3
 certifi
 rollbar
+honeycomb-beeline

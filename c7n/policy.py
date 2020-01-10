@@ -22,6 +22,8 @@ import logging
 import os
 import time
 
+import beeline
+
 import jmespath
 import six
 
@@ -38,6 +40,7 @@ from c7n.version import version
 log = logging.getLogger('c7n.policy')
 
 
+@beeline.traced(name='policy.load')
 def load(options, path, format=None, validate=True, vars=None):
     # should we do os.path.expanduser here?
     if not os.path.exists(path):
@@ -272,6 +275,7 @@ class PullMode(PolicyExecutionMode):
 
     schema = utils.type_schema('pull')
 
+    @beeline.traced(name='PullMode.run')
     def run(self, *args, **kw):
         if not self.is_runnable():
             return

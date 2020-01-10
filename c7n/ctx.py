@@ -50,9 +50,6 @@ class ExecutionContext(object):
         # For backward compatibility, accept both 'metrics' and 'metrics_enabled' params (PR #4361)
         metrics = self.options.metrics or self.options.metrics_enabled
         self.metrics = metrics_outputs.select(metrics, self)
-
-        # Tracer is wired into core filtering code / which is getting
-        # invoked sans execution context entry in tests
         self.tracer = tracer_outputs.select(self.options.tracer, self)
 
     def initialize(self):
