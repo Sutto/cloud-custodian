@@ -52,7 +52,7 @@ log = logging.getLogger('custodian.iamaccess')
 def _account(arn):
     # we could try except but some minor runtime cost, basically flag
     # invalids values
-    if ':' not in arn:
+    if 'arn:' not in arn:
         return arn
     return arn.split(':', 5)[4]
 
