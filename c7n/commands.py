@@ -326,7 +326,6 @@ def run(options, policies):
         log.info("Successfully ran %d policies." % len(policies))
     else:
         log.info("Ran %d policies, encountered an unhandled exception." % len(policies))
-        beeline.close()
         sys.exit(exit_code)
 
 

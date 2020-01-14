@@ -2,6 +2,7 @@ import os
 import beeline
 import functools
 import contextlib
+import atexit
 from beeline.trace import unmarshal_trace_context
 
 from c7n.output import tracer_outputs
@@ -11,7 +12,7 @@ HAVE_HONEYCOMB = 'HONEYCOMB_WRITE_KEY' in os.environ and 'HONEYCOMB_DATA_SET' in
 
 @tracer_outputs.register('beeline', condition=HAVE_HONEYCOMB)
 class BeelineTracer(object):
-    service_name = 'custodian-trace'
+    service_name = 'cloud-custodian'
 
     """Tracing provides for detailed analytics of a policy execution.
 
@@ -72,8 +73,11 @@ class traceable(object):
 
 
 def configure():
+    debug_mode = 'HONEYCOMB_DEBUG' in os.environ
     beeline.init(
         writekey=os.environ.get('HONEYCOMB_WRITE_KEY'),
         dataset=os.environ.get('HONEYCOMB_DATA_SET'),
-        service_name='cloud-custodian'
+        service_name='cloud-custodian',
+        debug=debug_mode,
     )
+    atexit.register(beeline.close)
