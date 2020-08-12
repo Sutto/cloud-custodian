@@ -385,6 +385,12 @@ class UpgradeAvailable(Filter):
                     results.append(r)
                 continue
             r['c7n-rds-engine-upgrade'] = target_upgrade
+
+            if 'c7n:rds-version-targets' not in r:
+                r['c7n:rds-version-targets'] = {}
+            version_key = 'major' if check_major else 'minor'
+            r['c7n:rds-version-targets'][version_key] = target_upgrade
+
             results.append(r)
         return results
 
